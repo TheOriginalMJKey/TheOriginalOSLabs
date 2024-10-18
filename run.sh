@@ -2,7 +2,7 @@
 
 # Компилируем родительскую и дочернюю программы
 gcc -o parent parent.c
-gcc -o child child.c
+gcc -o child child.c -lm
 
 # Проверяем, успешно ли скомпилировались программы
 if [ $? -ne 0 ]; then
