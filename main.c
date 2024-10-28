@@ -6,31 +6,32 @@
 
 // Структура данных для передачи в потоки
 typedef struct {
-    int row;
-    int col;
-    int size;
-    double complex **A;
-    double complex **B;
-    double complex **C;
-    sem_t *sem; // Семафор для ограничения количества потоков
+    int row;       // Индекс строки матрицы C
+    int col;       // Индекс столбца матрицы C
+    int size;      // Размер матриц
+    double complex **A; // Указатель на матрицу A
+    double complex **B; // Указатель на матрицу B
+    double complex **C; // Указатель на матрицу C
+    sem_t *sem;    // Семафор для ограничения количества потоков
 } ThreadData;
 
 // Функция для умножения элементов матриц
 void *multiply(void *arg) {
-    ThreadData *data = (ThreadData *)arg;
-    int row = data->row;
-    int col = data->col;
-    int size = data->size;
-    double complex **A = data->A;
-    double complex **B = data->B;
-    double complex **C = data->C;
+    ThreadData *data = (ThreadData *)arg; // Получаем данные для потока
+    int row = data->row; // Индекс строки матрицы C
+    int col = data->col; // Индекс столбца матрицы C
+    int size = data->size; // Размер матриц
+    double complex **A = data->A; // Указатель на матрицу A
+    double complex **B = data->B; // Указатель на матрицу B
+    double complex **C = data->C; // Указатель на матрицу C
 
+    // Выполняем умножение элементов матриц A и B и добавляем результат в матрицу C
     for (int k = 0; k < size; k++) {
         C[row][col] += A[row][k] * B[k][col];
     }
 
     sem_post(data->sem); // Освобождаем семафор для следующего потока
-    pthread_exit(NULL);
+    pthread_exit(NULL); // Завершаем поток
 }
 
 // Функция для печати матрицы комплексных чисел
@@ -50,9 +51,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    int size = atoi(argv[1]);
-    int num_threads = atoi(argv[2]);
-    int max_threads = atoi(argv[3]);
+    int size = atoi(argv[1]); // Размер матриц
+    int num_threads = atoi(argv[2]); // Количество потоков
+    int max_threads = atoi(argv[3]); // Максимальное количество потоков
 
     // Ограничение количества потоков
     if (num_threads > max_threads) {
@@ -69,9 +70,9 @@ int main(int argc, char *argv[]) {
         B[i] = malloc(size * sizeof(double complex));
         C[i] = malloc(size * sizeof(double complex));
         for (int j = 0; j < size; j++) {
-            A[i][j] = i + j * I;
-            B[i][j] = i + j * I;
-            C[i][j] = 0;
+            A[i][j] = i + j * I; // Инициализация матрицы A
+            B[i][j] = i + j * I; // Инициализация матрицы B
+            C[i][j] = 0; // Инициализация матрицы C нулями
         }
     }
 
@@ -79,30 +80,30 @@ int main(int argc, char *argv[]) {
     sem_t sem;
     sem_init(&sem, 0, num_threads);
 
-    pthread_t threads[size * size];
-    ThreadData data[size * size];
-    int thread_count = 0;
+    pthread_t threads[size * size]; // Массив для хранения идентификаторов потоков
+    ThreadData data[size * size]; // Массив для хранения данных для каждого потока
+    int thread_count = 0; // Счетчик потоков
 
     // Создание и запуск потоков для умножения элементов
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < size; j++) {
             sem_wait(&sem); // Ограничение количества потоков
-            data[thread_count].row = i;
-            data[thread_count].col = j;
-            data[thread_count].size = size;
-            data[thread_count].A = A;
-            data[thread_count].B = B;
-            data[thread_count].C = C;
-            data[thread_count].sem = &sem;
+            data[thread_count].row = i; // Устанавливаем индекс строки матрицы C
+            data[thread_count].col = j; // Устанавливаем индекс столбца матрицы C
+            data[thread_count].size = size; // Устанавливаем размер матриц
+            data[thread_count].A = A; // Устанавливаем указатель на матрицу A
+            data[thread_count].B = B; // Устанавливаем указатель на матрицу B
+            data[thread_count].C = C; // Устанавливаем указатель на матрицу C
+            data[thread_count].sem = &sem; // Устанавливаем указатель на семафор
 
-            pthread_create(&threads[thread_count], NULL, multiply, (void *)&data[thread_count]);
-            thread_count++;
+            pthread_create(&threads[thread_count], NULL, multiply, (void *)&data[thread_count]); // Создаем новый поток
+            thread_count++; // Увеличиваем счетчик потоков
         }
     }
 
     // Ожидание завершения всех потоков
     for (int k = 0; k < thread_count; k++) {
-        pthread_join(threads[k], NULL);
+        pthread_join(threads[k], NULL); // Основной поток ожидает завершения каждого потока
     }
 
     // Печать результата
