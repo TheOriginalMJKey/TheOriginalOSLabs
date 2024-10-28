@@ -48,6 +48,10 @@ function run_test {
     max_threads=$(check_threads $2 $3 $4)
     echo "Maximum number of threads used: $max_threads"
 
+    # Использование strace для отслеживания системных вызовов
+    strace -o strace_output_$2_$3_$4.txt ./main $2 $3 $4 > /dev/null
+    echo "strace output saved to strace_output_$2_$3_$4.txt"
+
     # Проверка корректности результата
     expected_output=$(cat expected_output_$2_$3_$4.txt)
     actual_output=$(cat output.txt)
