@@ -2,114 +2,126 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <complex.h>
-#include <semaphore.h>
 
-// Структура данных для передачи в потоки
+// Структура для передачи данных в поток
 typedef struct {
-    int row;       // Индекс строки матрицы C
-    int col;       // Индекс столбца матрицы C
-    int size;      // Размер матриц
-    double complex **A; // Указатель на матрицу A
-    double complex **B; // Указатель на матрицу B
-    double complex **C; // Указатель на матрицу C
-    sem_t *sem;    // Семафор для ограничения количества потоков
+    int start_row;  // Начальная строка для обработки
+    int end_row;    // Конечная строка для обработки
+    int size;       // Размер матрицы
+    double complex **A;  // Указатель на матрицу A
+    double complex **B;  // Указатель на матрицу B
+    double complex **C;  // Указатель на матрицу C (результат)
 } ThreadData;
 
-// Функция для умножения элементов матриц
+// Функция, выполняемая каждым потоком
 void *multiply(void *arg) {
-    ThreadData *data = (ThreadData *)arg; // Получаем данные для потока
-    int row = data->row; // Индекс строки матрицы C
-    int col = data->col; // Индекс столбца матрицы C
-    int size = data->size; // Размер матриц
-    double complex **A = data->A; // Указатель на матрицу A
-    double complex **B = data->B; // Указатель на матрицу B
-    double complex **C = data->C; // Указатель на матрицу C
+    // Преобразование аргумента в структуру ThreadData
+    ThreadData *data = (ThreadData *)arg;
+    int start_row = data->start_row;
+    int end_row = data->end_row;
+    int size = data->size;
+    double complex **A = data->A;
+    double complex **B = data->B;
+    double complex **C = data->C;
 
-    // Выполняем умножение элементов матриц A и B и добавляем результат в матрицу C
-    for (int k = 0; k < size; k++) {
-        C[row][col] += A[row][k] * B[k][col];
-    }
+    // Вывод сообщения о начале работы потока
+    printf("Thread started: start_row=%d, end_row=%d\n", start_row, end_row);
 
-    sem_post(data->sem); // Освобождаем семафор для следующего потока
-    pthread_exit(NULL); // Завершаем поток
-}
-
-// Функция для печати матрицы комплексных чисел
-void printMatrix(double complex **matrix, int size) {
-    for (int i = 0; i < size; i++) {
+    // Перемножение матриц
+    for (int i = start_row; i < end_row; i++) {
         for (int j = 0; j < size; j++) {
-            printf("(%f + %fi) ", creal(matrix[i][j]), cimag(matrix[i][j]));
+            for (int k = 0; k < size; k++) {
+                // Умножение элементов матриц A и B и добавление результата в матрицу C
+                C[i][j] += A[i][k] * B[k][j];
+            }
         }
-        printf("\n");
     }
+
+    // Вывод сообщения о завершении работы потока
+    printf("Thread finished: start_row=%d, end_row=%d\n", start_row, end_row);
+
+    // Завершение потока
+    pthread_exit(NULL);
 }
 
 int main(int argc, char *argv[]) {
-    // Проверка аргументов командной строки
+    // Проверка количества аргументов
     if (argc != 4) {
         printf("Usage: %s <matrix_size> <num_threads> <max_threads>\n", argv[0]);
         return 1;
     }
 
-    int size = atoi(argv[1]); // Размер матриц
-    int num_threads = atoi(argv[2]); // Количество потоков
-    int max_threads = atoi(argv[3]); // Максимальное количество потоков
+    // Получение аргументов командной строки
+    int size = atoi(argv[1]);
+    int num_threads = atoi(argv[2]);
+    int max_threads = atoi(argv[3]);
 
-    // Ограничение количества потоков
+    // Проверка, чтобы количество потоков не превышало максимальное значение
     if (num_threads > max_threads) {
         num_threads = max_threads;
     }
 
-    // Выделение памяти для матриц
+    // Инициализация матриц
     double complex **A = malloc(size * sizeof(double complex *));
     double complex **B = malloc(size * sizeof(double complex *));
     double complex **C = malloc(size * sizeof(double complex *));
+    if (A == NULL || B == NULL || C == NULL) {
+        printf("ERROR: Failed to allocate memory for matrices.\n");
+        return 1;
+    }
 
+    // Выделение памяти для строк матриц
     for (int i = 0; i < size; i++) {
         A[i] = malloc(size * sizeof(double complex));
         B[i] = malloc(size * sizeof(double complex));
-        C[i] = malloc(size * sizeof(double complex));
+        C[i] = calloc(size, sizeof(double complex));
+        if (A[i] == NULL || B[i] == NULL || C[i] == NULL) {
+            printf("ERROR: Failed to allocate memory for matrix rows.\n");
+            return 1;
+        }
+        // Инициализация элементов матриц A и B
         for (int j = 0; j < size; j++) {
-            A[i][j] = i + j * I; // Инициализация матрицы A
-            B[i][j] = i + j * I; // Инициализация матрицы B
-            C[i][j] = 0; // Инициализация матрицы C нулями
+            A[i][j] = i + j * I;
+            B[i][j] = i + j * I;
         }
     }
 
-    // Создание семафора для ограничения количества потоков
-    sem_t sem;
-    sem_init(&sem, 0, num_threads);
+    // Массив для хранения дескрипторов потоков
+    pthread_t threads[num_threads];
+    // Массив для хранения данных для каждого потока
+    ThreadData data[num_threads];
+    // Количество строк, обрабатываемых каждым потоком
+    int rows_per_thread = size / num_threads;
 
-    pthread_t threads[size * size]; // Массив для хранения идентификаторов потоков
-    ThreadData data[size * size]; // Массив для хранения данных для каждого потока
-    int thread_count = 0; // Счетчик потоков
+    // Создание потоков
+    for (int i = 0; i < num_threads; i++) {
+        data[i].start_row = i * rows_per_thread;
 
-    // Создание и запуск потоков для умножения элементов
-    for (int i = 0; i < size; i++) {
-        for (int j = 0; j < size; j++) {
-            sem_wait(&sem); // Ограничение количества потоков
-            data[thread_count].row = i; // Устанавливаем индекс строки матрицы C
-            data[thread_count].col = j; // Устанавливаем индекс столбца матрицы C
-            data[thread_count].size = size; // Устанавливаем размер матриц
-            data[thread_count].A = A; // Устанавливаем указатель на матрицу A
-            data[thread_count].B = B; // Устанавливаем указатель на матрицу B
-            data[thread_count].C = C; // Устанавливаем указатель на матрицу C
-            data[thread_count].sem = &sem; // Устанавливаем указатель на семафор
+        if (i == num_threads - 1) {
+            data[i].end_row = size;
+        } else {
+            data[i].end_row = (i + 1) * rows_per_thread;
+        }
 
-            pthread_create(&threads[thread_count], NULL, multiply, (void *)&data[thread_count]); // Создаем новый поток
-            thread_count++; // Увеличиваем счетчик потоков
+        data[i].size = size;
+        data[i].A = A;
+        data[i].B = B;
+        data[i].C = C;
+
+        // Создание нового потока
+        int rc = pthread_create(&threads[i], NULL, multiply, (void *)&data[i]);
+        if (rc) {
+            printf("ERROR: return code from pthread_create() is %d\n", rc);
+            exit(-1);
         }
     }
 
     // Ожидание завершения всех потоков
-    for (int k = 0; k < thread_count; k++) {
-        pthread_join(threads[k], NULL); // Основной поток ожидает завершения каждого потока
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join(threads[i], NULL);
     }
 
-    // Печать результата
-    printMatrix(C, size);
-
-    // Освобождение памяти и уничтожение семафора
+    // Освобождение памяти
     for (int i = 0; i < size; i++) {
         free(A[i]);
         free(B[i]);
@@ -118,7 +130,6 @@ int main(int argc, char *argv[]) {
     free(A);
     free(B);
     free(C);
-    sem_destroy(&sem);
 
     return 0;
 }
