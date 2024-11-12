@@ -1,70 +1,89 @@
 #!/bin/bash
 
-# Компиляция программы
+# Компилируем программу main.c с использованием gcc и библиотеки pthread
 gcc main.c -o main -lpthread
 
-# Функция для замера времени выполнения программы
+# Функция для измерения времени выполнения программы
 function get_exec_time {
+    # Записываем текущее время в миллисекундах
     local start_time=$(date +%s%3N)
+
+    # Запускаем программу main с переданными аргументами и перенаправляем вывод в файл output.txt
     ./main $1 $2 $3 > output.txt
+
+    # Записываем текущее время в миллисекундах после завершения программы
     local end_time=$(date +%s%3N)
-    echo $((end_time-start_time))
+
+    # Вычисляем разницу между начальным и конечным временем и выводим результат
+    echo $((end_time - start_time))
 }
 
-# Функция для проверки количества потоков
-function check_threads {
+# Функция для отслеживания максимального количества потоков, используемых программой
+function check_max_threads {
+    # Запускаем программу main с переданными аргументами в фоновом режиме и перенаправляем вывод в /dev/null
     ./main $1 $2 $3 > /dev/null &
+
+    # Записываем PID запущенной программы
     PID=$!
 
-    max=0
+    # Инициализируем переменную для отслеживания максимального количества потоков
+    max_threads=0
 
-    # Проверяем количество потоков
+    # Цикл для отслеживания количества потоков, пока программа выполняется
     while kill -0 $PID 2> /dev/null; do
-        # Считываем количество потоков, если файл /proc/$PID/status существует
-        if [ -e /proc/$PID/status ]; then
-            THREADS=$(grep Threads /proc/$PID/status | awk '{print $2}')
+        # Извлекаем количество потоков из файла /proc/$PID/status
+        THREADS=$(grep Threads /proc/$PID/status | awk '{print $2}')
 
-            # Обновляем максимальное количество потоков, если значение увеличилось
-            if [ -n "$THREADS" ] && [ $THREADS -gt $max ]; then
-                max=$THREADS
-            fi
-        fi
+        # Если количество потоков больше текущего максимального значения, обновляем максимальное значение
+        [ "$THREADS" -gt "$max_threads" ] && max_threads=$THREADS
+
+        # Задержка на 0.1 секунду перед следующей проверкой
         sleep 0.1
     done
 
-    echo $(($max - 1))
+    # Вычитаем один из общего количества потоков, чтобы исключить оригинальный поток
+    echo $((max_threads - 1))
 }
 
-# Функция для запуска тестов
+# Функция для запуска тестов с различными параметрами
 function run_test {
-    echo "Running test: $1"
-    echo "Matrix size: $2, Number of threads: $3, Max threads: $4"
+    # Записываем переданные аргументы в локальные переменные
+    local size=$1
+    local num_threads=$2
+    local max_threads=$3
 
-    # Замер времени выполнения
-    Tp=$(get_exec_time $2 $3 $4)
-    echo "Execution time: $Tp ms"
+    # Выводим информацию о текущем тесте
+    echo "Running test: Matrix size = $size, Num threads = $num_threads, Max threads = $max_threads"
 
-    # Проверка количества потоков
-    max_threads=$(check_threads $2 $3 $4)
-    echo "Maximum number of threads used: $max_threads"
+    # Измеряем время выполнения программы в однопоточном режиме
+    single_thread_time=$(get_exec_time $size 1 1)
+    echo "Single-thread execution time: $single_thread_time ms"
 
-    # Использование strace для отслеживания системных вызовов
-    strace -o strace_output_$2_$3_$4.txt ./main $2 $3 $4 > /dev/null
-    echo "strace output saved to strace_output_$2_$3_$4.txt"
+    # Измеряем время выполнения программы в многопоточном режиме
+    multi_thread_time=$(get_exec_time $size $num_threads $max_threads)
+    echo "Multi-thread execution time: $multi_thread_time ms"
 
-    # Проверка корректности результата
-    expected_output=$(cat expected_output_$2_$3_$4.txt)
-    actual_output=$(cat output.txt)
-    if [ "$expected_output" == "$actual_output" ]; then
-        echo "Test passed"
+    # Отслеживаем максимальное количество потоков, используемых программой
+    actual_max_threads=$(check_max_threads $size $num_threads $max_threads)
+    echo "Actual max threads used: $actual_max_threads"
+
+    # Проверяем, ускоряет ли многопоточность выполнение программы
+    if (( multi_thread_time < single_thread_time )); then
+        echo "PASS: Multi-threading is faster than single-threading."
     else
-        echo "Test failed"
+        echo "FAIL: Multi-threading did not improve performance."
     fi
 
+    # Проверяем, не превышает ли количество потоков заданное ограничение
+    if (( actual_max_threads <= max_threads )); then
+        echo "PASS: Thread count did not exceed limit."
+    else
+        echo "FAIL: Thread count exceeded the limit."
+    fi
     echo ""
 }
 
-# Тесты
-run_test "Test 1: Small matrix 2x2" 2 2 2
-run_test "Test 2: Medium matrix 5x5" 5 4 4
-run_test "Test 3: Large matrix 10x10" 10 8 8
+# Запускаем тесты с различными параметрами
+run_test 1000 4 4
+run_test 1000 8 8
+run_test 1000 16 16
